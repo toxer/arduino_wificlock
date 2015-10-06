@@ -10,10 +10,10 @@
 #include <WiFiServer.h>
 #include <WiFiUdp.h>
 
+#define DEBUG false
 
-
-#define SDA 0 //GIPO0 
-#define SCL 2 //GIPO2
+#define SDA 1 //TX 
+#define SCL 3 //RX
 #define DEVICE 8 //Slave device address
 
 
@@ -25,8 +25,13 @@
 #define TIMEOUT 60000
 #define EEPROMSIZE 4096
 
+
+#define BLUE_LED 0
+#define CONTROL_PIN 2 //GIPO2
+
 #define ESCAPE_SEQUENCE_STRING "\n"
 #define ESCAPE_SEQUENCE_CHAR '\n'
+
 
 
 String ssid ;
@@ -40,13 +45,18 @@ int ticker;
 unsigned long currentNTPTime;
 // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
 const unsigned long seventyYears = 2208988800UL;
+String  localIP;
 
 
+
+//metodo di trasmissione I2C non attivo in DEBUG
 void I2CSend(String s) {
+  if (!DEBUG){
   Wire.beginTransmission(DEVICE);
   Wire.write(s.c_str());
   Wire.write("\n");
   Wire.endTransmission();
+  }
 }
 
 
@@ -122,6 +132,9 @@ void getNTPTime() {
 }
 
 void connectToLocalWiFi() {
+
+
+
   Serial.println("SSID:" + ssid);
   boolean status = false;
   while ( status != WL_CONNECTED) {
@@ -134,41 +147,60 @@ void connectToLocalWiFi() {
     }
     // wait 10 seconds for connection:
     I2CSend("ND"); //Newtwork down
-    delay(10000);
+    for (int i = 0; i < 5; i++) {
+      controlLed(BLUE_LED, HIGH);
+      delay(500);
+      controlLed(BLUE_LED, LOW);
+      delay(500);
+    }
 
   }
   Serial.println("Network connected");
   I2CSend("NC"); //Network connect;
+  controlLed(BLUE_LED, HIGH);
   IPAddress myAddr = WiFi.localIP();
 
   byte first_octet = myAddr[0];
   byte second_octet = myAddr[1];
   byte third_octet = myAddr[2];
   byte fourth_octet = myAddr[3];
-  String  localIP =  String(first_octet)  + "." + second_octet  + "." + third_octet  + "." + fourth_octet;
+  localIP =  String(first_octet)  + "." + second_octet  + "." + third_octet  + "." + fourth_octet;
   I2CSend("IP" + localIP);
   Serial.println(localIP);
 }
 
+
+void controlLed(int led, int status) {
+  if (DEBUG) {
+    return;
+  }
+  digitalWrite(led, status);
+}
+
 void setup() {
-  Serial.begin(57600);
+  if (DEBUG) {
+    Serial.begin(57600);
+  } else {
+
+    pinMode(BLUE_LED, OUTPUT);
+  }
 
   Serial.println("Begin");
   EEPROM.begin(EEPROMSIZE);
   delay(5000);
   Serial.println("Read mode");
-  pinMode(GPIO2, INPUT);
-  networkMode = digitalRead(GPIO2);
+  pinMode(CONTROL_PIN, INPUT);
+  networkMode = digitalRead(CONTROL_PIN);
 
 
 
   if (networkMode == LOW) {
+
+    controlLed(BLUE_LED, HIGH);
     //programmazione tramite rete ad hoc
     Serial.println("RETE AD HOC");
-
     WiFi.mode(WIFI_AP);
     WiFi.softAP(SETUP_NET_SSID);
-
     server.begin();
 
 
@@ -176,8 +208,10 @@ void setup() {
     Serial.println("NETWORK CONNECTION");
 
 
-    //attivo la modalità i2c
-    Wire.begin(SDA, SCL);
+    //attivo la modalità i2c se non in debug
+    if (!DEBUG) {
+      Wire.begin(SDA, SCL);
+    }
 
     //attivo la rete
 
@@ -192,6 +226,14 @@ void setup() {
     readConfiguration();
     if (ssid == "") {
       Serial.println("NO NETWORK FOUND");
+      while (true) {
+
+        controlLed(BLUE_LED, HIGH);
+        delay(200);
+
+        controlLed(BLUE_LED, LOW);
+        delay(200);
+      }
     } else {
       connectToLocalWiFi();
 
@@ -268,7 +310,7 @@ void readConfiguration() {
   }
   currentIndex++;
   offset = currentIndex;
-  Serial.println("SSID:" + ssid + "\n PASS:" + password+"\nNTP:"+ntpServerName);
+  Serial.println("SSID:" + ssid + "\n PASS:" + password + "\nNTP:" + ntpServerName);
 }
 void loop() {
 
@@ -342,6 +384,7 @@ void loop() {
             client.println("SSID: " + ssid);
             client.println("PASS: " + password);
             client.println("NPT: " + ntpServerName);
+            client.println("LOCAL_IP: " + localIP);
 
             //controllo qunato salvato
 
@@ -374,9 +417,13 @@ void loop() {
 
 
   } else {
-    //ora dall'ntp
-    getNTPTime();
-    delay(10000);
+    if (WiFi.status() == WL_CONNECTED) {
+      //ora dall'ntp
+      getNTPTime();
+      delay(10000);
+    } else {
+      connectToLocalWiFi();
+    }
   }
 
 

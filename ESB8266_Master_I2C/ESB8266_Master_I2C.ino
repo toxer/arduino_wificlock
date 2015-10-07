@@ -1,6 +1,6 @@
 #include <EEPROM.h>
 
-#include <EepromUtil.h>
+
 
 
 #include <Wire.h>
@@ -10,7 +10,7 @@
 #include <WiFiServer.h>
 #include <WiFiUdp.h>
 
-#define DEBUG false
+#define DEBUG true
 
 #define SDA 1 //TX 
 #define SCL 3 //RX
@@ -37,9 +37,10 @@
 String ssid ;
 String password ;
 String ntpServerName;
+
 String serviceServer;
 int networkMode = LOW;
-EepromUtil eepromUtil;
+
 WiFiServer server(23);
 int ticker;
 unsigned long currentNTPTime;
@@ -51,11 +52,11 @@ String  localIP;
 
 //metodo di trasmissione I2C non attivo in DEBUG
 void I2CSend(String s) {
-  if (!DEBUG){
-  Wire.beginTransmission(DEVICE);
-  Wire.write(s.c_str());
-  Wire.write("\n");
-  Wire.endTransmission();
+  if (!DEBUG) {
+    Wire.beginTransmission(DEVICE);
+    Wire.write(s.c_str());
+    Wire.write("\n");
+    Wire.endTransmission();
   }
 }
 
@@ -65,6 +66,7 @@ IPAddress timeServerIP;
 const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first 48 bytes of the message
 byte packetBuffer[ NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets
 WiFiUDP udp;
+unsigned int localPort = 2390;
 
 unsigned long sendNTPpacket(IPAddress& address)
 {
@@ -92,11 +94,13 @@ unsigned long sendNTPpacket(IPAddress& address)
 
 void getNTPTime() {
   WiFi.hostByName(ntpServerName.c_str(), timeServerIP);
+  //Serial.println("NTP SERVER:"+timeServerIP);
   sendNTPpacket(timeServerIP); // send an NTP packet to a time server
   delay(1000);
   int cb = udp.parsePacket();
   if (!cb) {
     Serial.println("no packet yet");
+    return;
   }
   Serial.print("packet received, length=");
   Serial.println(cb);
@@ -114,11 +118,10 @@ void getNTPTime() {
   Serial.println(epoch);
   String currentTime = "";
 
-  currentTime = currentTime + String(((epoch  % 86400L) / 3600));
+  currentTime = currentTime + String(((epoch  % 86400L) / 3600))+":";
   if ( ((epoch % 3600) / 60) < 10 ) {
     currentTime = currentTime + "0";
   }
-  currentTime = currentTime + ":";
   currentTime = currentTime + String((epoch  % 3600) / 60);
   currentTime = currentTime + ":";
   if ( (epoch % 60) < 10 ) {
@@ -138,6 +141,12 @@ void connectToLocalWiFi() {
   Serial.println("SSID:" + ssid);
   boolean status = false;
   while ( status != WL_CONNECTED) {
+    for (int i = 0; i < 3; i++) {
+      controlLed(BLUE_LED, HIGH);
+      delay(200);
+      controlLed(BLUE_LED, LOW);
+      delay(200);
+    }
     // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
     if (password != "") {
       status = WiFi.begin(ssid.c_str(), password.c_str());
@@ -149,9 +158,9 @@ void connectToLocalWiFi() {
     I2CSend("ND"); //Newtwork down
     for (int i = 0; i < 5; i++) {
       controlLed(BLUE_LED, HIGH);
-      delay(500);
+      delay(1000);
       controlLed(BLUE_LED, LOW);
-      delay(500);
+      delay(1000);
     }
 
   }
@@ -167,6 +176,7 @@ void connectToLocalWiFi() {
   localIP =  String(first_octet)  + "." + second_octet  + "." + third_octet  + "." + fourth_octet;
   I2CSend("IP" + localIP);
   Serial.println(localIP);
+  udp.begin(localPort);
 }
 
 
@@ -312,6 +322,10 @@ void readConfiguration() {
   offset = currentIndex;
   Serial.println("SSID:" + ssid + "\n PASS:" + password + "\nNTP:" + ntpServerName);
 }
+
+
+
+
 void loop() {
 
   //modalità ad-hoc
@@ -325,6 +339,12 @@ void loop() {
       if (!connected) {
         connected = true;
         Serial.println("Client connected");
+        for (int i = 0; i < 3; i++) {
+          controlLed(BLUE_LED, HIGH);
+          delay(200);
+          controlLed(BLUE_LED, LOW);
+          delay(200);
+        }
       }
       int index = 0;
 
